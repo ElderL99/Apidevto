@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Post = require('../models/Post');
+const jwt = require("jsonwebtoken");
 
 // Crear un post
 // routes/posts.js (Endpoint POST /)
