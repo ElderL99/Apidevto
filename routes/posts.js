@@ -3,12 +3,49 @@ const router = express.Router();
 const Post = require('../models/Post');
 
 // Crear un post
-router.post('/', async (req, res) => {
+// routes/posts.js (Endpoint POST /)
+router.post("/", async (req, res) => {
   try {
-    const { title, content, author } = req.body;
-    const post = new Post({ title, content, author });
+    const { title, content, tags } = req.body; // <- author ya no se recibe del body
+
+    // Validar campos requeridos (solo title y content)
+    if (!title || !content) {
+      return res.status(400).json({ error: "Faltan campos obligatorios: title o content" });
+    }
+
+    // Obtener el ID del usuario desde el token JWT
+    const token = req.headers.authorization.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const author = decoded.id;
+
+    // Crear el post
+    const post = new Post({ title, content, author, tags });
     await post.save();
     res.status(201).json(post);
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Obtener posts por tag
+router.get('/by-tag/:tag', async (req, res) => {
+  try {
+    const { tag } = req.params;
+    if (!tag) return res.status(400).json({ error: "Falta el tag" }); // <--
+
+    const posts = await Post.find({ tags: tag }).populate("author", "username");
+    res.json(posts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Obtener todos los tags existentes
+router.get("/tags", async (req, res) => {
+  try {
+    const tags = await Post.distinct("tags");
+    res.json(tags);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -50,11 +87,26 @@ router.get('/relevant', async (req, res) => {
         }
       },
       {
-        $addFields: {
-          commentCount: { $size: '$comments' }
+        $lookup: {
+          from: 'reactions', // Añadir reacciones
+          localField: '_id',
+          foreignField: 'post',
+          as: 'reactions'
         }
       },
-      { $sort: { commentCount: -1 } }
+      {
+        $addFields: {
+          commentCount: { $size: '$comments' },
+          reactionCount: { $size: '$reactions' }, // cuanta las reacciones
+          relevance: { 
+            $add: [
+              { $multiply: ['$commentCount', 2] }, // Peso a comentarios
+              '$reactionCount' 
+            ]
+          }
+        }
+      },
+      { $sort: { relevance: -1 } } // Ordena por relevancia total
     ]);
     res.json(posts);
   } catch (error) {
