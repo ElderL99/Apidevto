@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Post = require('../models/Post');
 
-// Crear un post (requiere autenticación)
+// Crear un post
 router.post('/', async (req, res) => {
   try {
     const { title, content, author } = req.body;
@@ -14,17 +14,16 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Obtener todos los posts (general)
+// Obtener todos los posts
 router.get('/', async (req, res) => {
   try {
     const posts = await Post.find().populate('author', 'username');
     res.json(posts);
   } catch (error) {
     res.status(500).json({ error: error.message });
-  }
 });
 
-// Últimos posts (ordenados por fecha)
+// Últimos posts
 router.get('/latest', async (req, res) => {
   try {
     const posts = await Post.find()
@@ -36,7 +35,7 @@ router.get('/latest', async (req, res) => {
   }
 });
 
-// Posts más relevantes (ejemplo: con más comentarios)
+// Posts relevantes
 router.get('/relevant', async (req, res) => {
   try {
     const posts = await Post.aggregate([
@@ -60,5 +59,4 @@ router.get('/relevant', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-module.exports = router;
+module.exports = router; 
