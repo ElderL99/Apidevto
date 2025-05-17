@@ -1,37 +1,41 @@
-const express = require('express');
+// routes/reactions.js
+const express = require("express");
 const router = express.Router();
-const Reaction = require('../models/Reaction');
+const Reaction = require("../models/Reaction");
+const jwt = require("jsonwebtoken");
 
-// Toggle de reacción
-router.post('/toggle', async (req, res) => {
+router.post("/toggle", async (req, res) => {
   try {
-    const { type, user, post } = req.body;
+    const { post, type } = req.body;
 
-    // Buscar si ya existe la reacción
-    const existingReaction = await Reaction.findOne({ type, user, post });
+    // Validar campos
+    if (!post || !type) {
+      return res.status(400).json({ error: "Faltan campos obligatorios" });
+    }
+
+    // Obtener el usuario desde el token JWT
+    const token = req.headers.authorization.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = decoded.id; // <-- ¡Aquí se obtiene el user!
+
+    // Buscar reacción existente
+    const existingReaction = await Reaction.findOne({ post, user, type });
 
     if (existingReaction) {
       await Reaction.deleteOne({ _id: existingReaction._id });
-      const total = await Reaction.countDocuments({ post });
-      res.json({ action: 'removed', total });
+      const total = await Reaction.countDocuments({ post, type });
+      res.json({ action: "removed", total });
     } else {
-      const reaction = new Reaction({ type, user, post });
+      const reaction = new Reaction({ post, user, type }); // <-- Incluir user
       await reaction.save();
-      const total = await Reaction.countDocuments({ post });
-      res.json({ action: 'added', total });
+      const total = await Reaction.countDocuments({ post, type });
+      res.json({ action: "added", total });
     }
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
-// Obtener reacciones de un post
-router.get('/', async (req, res) => {
-  try {
-    const { post } = req.query;
-    const reactions = await Reaction.find({ post }).populate('user', 'username');
-    res.json(reactions);
   } catch (error) {
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({ error: "Token inválido" });
+    }
     res.status(500).json({ error: error.message });
   }
 });

@@ -2,14 +2,14 @@ const express = require('express');
 const router = express.Router();
 const Post = require('../models/Post');
 const jwt = require("jsonwebtoken");
+const mongoose = require('mongoose');
 
 // Crear un post
-// routes/posts.js (Endpoint POST /)
 router.post("/", async (req, res) => {
   try {
-    const { title, content, tags } = req.body; // <- author ya no se recibe del body
+    const { title, content, tags } = req.body;
 
-    // Validar campos requeridos (solo title y content)
+    // Validar campos requeridos
     if (!title || !content) {
       return res.status(400).json({ error: "Faltan campos obligatorios: title o content" });
     }
@@ -33,7 +33,7 @@ router.post("/", async (req, res) => {
 router.get('/by-tag/:tag', async (req, res) => {
   try {
     const { tag } = req.params;
-    if (!tag) return res.status(400).json({ error: "Falta el tag" }); // <--
+    if (!tag) return res.status(400).json({ error: "Falta el tag" });
 
     const posts = await Post.find({ tags: tag }).populate("author", "username");
     res.json(posts);
@@ -61,7 +61,23 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// Obtener un post por ID
+
+// Obtener resumen de reacciones de un post
+router.get('/:id/reactions', async (req, res) => {
+  try {
+    const postId = req.params.id;
+
+    // Validar ID del post
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: "ID de post inválido" });
+    }
+
+    const reactions = await Post.getReactionsSummary(postId);
+    res.json(reactions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Últimos posts
 router.get('/latest', async (req, res) => {
@@ -89,7 +105,7 @@ router.get('/relevant', async (req, res) => {
       },
       {
         $lookup: {
-          from: 'reactions', // Añadir reacciones
+          from: 'reactions',
           localField: '_id',
           foreignField: 'post',
           as: 'reactions'
@@ -98,20 +114,24 @@ router.get('/relevant', async (req, res) => {
       {
         $addFields: {
           commentCount: { $size: '$comments' },
-          reactionCount: { $size: '$reactions' }, // cuanta las reacciones
-          relevance: { 
+          reactionCount: { $size: '$reactions' },
+          relevance: {
             $add: [
-              { $multiply: ['$commentCount', 2] }, // Peso a comentarios
-              '$reactionCount' 
+              { $multiply: ['$commentCount', 2] },
+              '$reactionCount'
             ]
           }
         }
       },
-      { $sort: { relevance: -1 } } // Ordena por relevancia total
+      { $sort: { relevance: -1 } }
     ]);
-    res.json(posts);
+
+    // Opcional: Populate para obtener datos del autor
+    const populatedPosts = await Post.populate(posts, { path: 'author', select: 'username' });
+    res.json(populatedPosts);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-module.exports = router; 
+
+module.exports = router;
