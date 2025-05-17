@@ -134,4 +134,48 @@ router.get('/relevant', async (req, res) => {
   }
 });
 
+// Buscarposts por título, contenido, tags o autor
+router.get("/search", async (req, res) => {
+  try {
+    const query = req.query.q || ""; // Ejemplo: /api/posts/search?q=nodejs
+    if (!query) return res.status(400).json({ error: "Falta el parámetro de búsqueda" });
+
+    // Buscar posts que coincidan con el query
+    const posts = await Post.aggregate([
+      {
+        $lookup: {
+          from: "users", // Colección de usuarios
+          localField: "author",
+          foreignField: "_id",
+          as: "author"
+        }
+      },
+      { $unwind: "$author" }, // Convierte el array "author" en un objeto
+      {
+        $match: {
+          $or: [
+            { title: { $regex: query, $options: "i" } }, // Búsqueda en título (case-insensitive)
+            { content: { $regex: query, $options: "i" } }, // Búsqueda en contenido
+            { tags: { $regex: query, $options: "i" } }, // Búsqueda en tags
+            { "author.username": { $regex: query, $options: "i" } }, // Búsqueda en nombre de usuario
+          ]
+        }
+      },
+      {
+        $project: {
+          title: 1,
+          content: 1,
+          tags: 1,
+          createdAt: 1,
+          "author.username": 1
+        }
+      }
+    ]);
+
+    res.json(posts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
