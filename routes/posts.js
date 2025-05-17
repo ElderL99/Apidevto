@@ -21,7 +21,9 @@ router.get('/', async (req, res) => {
     res.json(posts);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
 });
+// Obtener un post por ID
 
 // Últimos posts
 router.get('/latest', async (req, res) => {
