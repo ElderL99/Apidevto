@@ -27,6 +27,8 @@ app.use('/api/comments', require('./routes/comments'));
 app.use('/api/reactions', require('./routes/reactions'));
 
 
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor en http://localhost:${PORT}`);
