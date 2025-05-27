@@ -11,7 +11,7 @@ app.use(express.json());
 
 
 // MongoDB connection
-mongoose.connect(process.env.local.MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('Conectado a MongoDB'))
 .catch(err => console.error('Error de conexión:', err));
 // Ruta de prueba

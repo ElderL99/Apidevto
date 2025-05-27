@@ -1,181 +1,169 @@
-const express = require('express');
-const router = express.Router();
-const Post = require('../models/Post');
-const jwt = require("jsonwebtoken");
-const mongoose = require('mongoose');
+// routes/posts.js
+const express  = require('express')
+const router   = express.Router()
+const Post     = require('../models/Post')
+const jwt      = require('jsonwebtoken')
+const mongoose = require('mongoose')
 
-// Crear un post
-router.post("/", async (req, res) => {
+/**
+ * 1) Crear un post (protegido por JWT)
+ */
+router.post('/', async (req, res) => {
   try {
-    const { title, content, tags } = req.body;
-
-    // Validar campos requeridos
+    const { title, content, tags } = req.body
     if (!title || !content) {
-      return res.status(400).json({ error: "Faltan campos obligatorios: title o content" });
+      return res
+        .status(400)
+        .json({ error: 'Faltan campos obligatorios: title o content' })
     }
+    const token   = req.headers.authorization?.split(' ')[1]
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    const author  = decoded.id
 
-    // Obtener el ID del usuario desde el token JWT
-    const token = req.headers.authorization.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const author = decoded.id;
-
-    // Crear el post
-    const post = new Post({ title, content, author, tags });
-    await post.save();
-    res.status(201).json(post);
-
+    const post = new Post({ title, content, author, tags })
+    await post.save()
+    res.status(201).json(post)
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message })
   }
-});
+})
 
-// Obtener posts por tag
+/**
+ * 2) Posts por tag
+ */
 router.get('/by-tag/:tag', async (req, res) => {
   try {
-    const { tag } = req.params;
-    if (!tag) return res.status(400).json({ error: "Falta el tag" });
-
-    const posts = await Post.find({ tags: tag }).populate("author", "username");
-    res.json(posts);
+    const { tag } = req.params
+    if (!tag) return res.status(400).json({ error: 'Falta el tag' })
+    const posts = await Post.find({ tags: tag }).populate('author','username')
+    res.json(posts)
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message })
   }
-});
+})
 
-// Obtener todos los tags existentes
-router.get("/tags", async (req, res) => {
+/**
+ * 3) Todos los tags
+ */
+router.get('/tags', async (req, res) => {
   try {
-    const tags = await Post.distinct("tags");
-    res.json(tags);
+    const tags = await Post.distinct('tags')
+    res.json(tags)
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message })
   }
-});
+})
 
-// Obtener todos los posts
-router.get('/', async (req, res) => {
-  try {
-    const posts = await Post.find().populate('author', 'username');
-    res.json(posts);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Obtener resumen de reacciones de un post
-router.get('/:id/reactions', async (req, res) => {
-  try {
-    const postId = req.params.id;
-
-    // Validar ID del post
-    if (!mongoose.Types.ObjectId.isValid(postId)) {
-      return res.status(400).json({ error: "ID de post inválido" });
-    }
-
-    const reactions = await Post.getReactionsSummary(postId);
-    res.json(reactions);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Últimos posts
+/**
+ * 4) Últimos posts
+ */
 router.get('/latest', async (req, res) => {
   try {
     const posts = await Post.find()
       .sort({ createdAt: -1 })
-      .populate('author', 'username');
-    res.json(posts);
+      .populate('author','username')
+    res.json(posts)
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message })
   }
-});
+})
 
-// Posts relevantes
+/**
+ * 5) Posts relevantes
+ */
 router.get('/relevant', async (req, res) => {
   try {
     const posts = await Post.aggregate([
-      {
-        $lookup: {
-          from: 'comments',
-          localField: '_id',
-          foreignField: 'post',
-          as: 'comments'
+      { $lookup: { from:'comments', localField:'_id', foreignField:'post', as:'comments' } },
+      { $lookup: { from:'reactions', localField:'_id', foreignField:'post', as:'reactions' } },
+      { $addFields: {
+          commentCount:  { $size:'$comments' },
+          reactionCount: { $size:'$reactions' },
+          relevance:     { $add: [
+            { $multiply:['$commentCount',2] },
+            '$reactionCount'
+          ]}
         }
       },
-      {
-        $lookup: {
-          from: 'reactions',
-          localField: '_id',
-          foreignField: 'post',
-          as: 'reactions'
-        }
-      },
-      {
-        $addFields: {
-          commentCount: { $size: '$comments' },
-          reactionCount: { $size: '$reactions' },
-          relevance: {
-            $add: [
-              { $multiply: ['$commentCount', 2] },
-              '$reactionCount'
-            ]
-          }
-        }
-      },
-      { $sort: { relevance: -1 } }
-    ]);
-
-    // Opcional: Populate para obtener datos del autor
-    const populatedPosts = await Post.populate(posts, { path: 'author', select: 'username' });
-    res.json(populatedPosts);
+      { $sort:{ relevance:-1 } }
+    ])
+    const populated = await Post.populate(posts, { path:'author', select:'username' })
+    res.json(populated)
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message })
   }
-});
+})
 
-// Buscarposts por título, contenido, tags o autor
-router.get("/search", async (req, res) => {
+/**
+ * 6) Buscar posts
+ */
+router.get('/search', async (req, res) => {
   try {
-    const query = req.query.q || ""; // Ejemplo: /api/posts/search?q=nodejs
-    if (!query) return res.status(400).json({ error: "Falta el parámetro de búsqueda" });
+    const q = req.query.q || ''
+    if (!q) return res.status(400).json({ error:'Falta el parámetro de búsqueda' })
 
-    // Buscar posts que coincidan con el query
     const posts = await Post.aggregate([
-      {
-        $lookup: {
-          from: "users", // Colección de usuarios
-          localField: "author",
-          foreignField: "_id",
-          as: "author"
-        }
-      },
-      { $unwind: "$author" }, // Convierte el array "author" en un objeto
-      {
-        $match: {
-          $or: [
-            { title: { $regex: query, $options: "i" } }, // Búsqueda en título (case-insensitive)
-            { content: { $regex: query, $options: "i" } }, // Búsqueda en contenido
-            { tags: { $regex: query, $options: "i" } }, // Búsqueda en tags
-            { "author.username": { $regex: query, $options: "i" } }, // Búsqueda en nombre de usuario
+      { $lookup:{ from:'users', localField:'author', foreignField:'_id', as:'author' }},
+      { $unwind:'$author' },
+      { $match:{
+          $or:[
+            { title:          { $regex:q, $options:'i' } },
+            { content:        { $regex:q, $options:'i' } },
+            { tags:           { $regex:q, $options:'i' } },
+            { 'author.username': { $regex:q, $options:'i' }}
           ]
         }
       },
-      {
-        $project: {
-          title: 1,
-          content: 1,
-          tags: 1,
-          createdAt: 1,
-          "author.username": 1
-        }
-      }
-    ]);
-
-    res.json(posts);
+      { $project:{ title:1,content:1,tags:1,createdAt:1,'author.username':1 }}
+    ])
+    res.json(posts)
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message })
   }
-});
+})
 
-module.exports = router;
+/**
+ * 7) Todos los posts
+ */
+router.get('/', async (req, res) => {
+  try {
+    const posts = await Post.find().populate('author','username')
+    res.json(posts)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * 8) Reacciones de un post
+ */
+router.get('/:id/reactions', async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error:'ID de post inválido' })
+    }
+    const reactions = await Post.getReactionsSummary(id)
+    res.json(reactions)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * 9) UN SOLO POST POR ID
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const post = await Post.findById(id).populate('author','username')
+    if (!post) {
+      return res.status(404).json({ error:'Post no encontrado' })
+    }
+    res.json(post)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+module.exports = router
