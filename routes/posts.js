@@ -1,41 +1,70 @@
 // routes/posts.js
 const express  = require('express')
 const router   = express.Router()
-const Post     = require('../models/Post')
-const jwt      = require('jsonwebtoken')
+const path     = require('path')
+const multer   = require('multer')
 const mongoose = require('mongoose')
+const Post     = require('../models/Post')
+const auth     = require('../middleware/auth') // JWT auth middleware
 
-/**
- * 1) Crear un post (protegido por JWT)
- */
-router.post('/', async (req, res) => {
-  try {
-    const { title, content, tags } = req.body
-    if (!title || !content) {
-      return res
-        .status(400)
-        .json({ error: 'Faltan campos obligatorios: title o content' })
-    }
-    const token   = req.headers.authorization?.split(' ')[1]
-    const decoded = jwt.verify(token, process.env.JWT_SECRET)
-    const author  = decoded.id
-
-    const post = new Post({ title, content, author, tags })
-    await post.save()
-    res.status(201).json(post)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
+// --- Multer setup for image uploads ---
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, '..', 'public', 'uploads'))
+  },
+  filename: (req, file, cb) => {
+    const uniq = Date.now() + '-' + Math.round(Math.random() * 1e9)
+    const ext  = path.extname(file.originalname)
+    cb(null, uniq + ext)
   }
 })
+const upload = multer({ storage })
+
+
+
+
+router.post(
+  '/',
+  auth,
+  upload.single('image'),
+  async (req, res) => {
+    try {
+      const { title, content, tags } = req.body
+      if (!title || !content) {
+        return res.status(400).json({ error: 'Faltan campos obligatorios: title o content' })
+      }
+      // 
+      const tagsArray = tags
+        ? tags.split(',')
+            .map(t => t.toLowerCase().trim())
+            .filter(Boolean)
+        : []
+      
+      const imageUrl = req.file ? `/uploads/${req.file.filename}` : undefined
+      const newPost = new Post({
+        title,
+        content,
+        tags: tagsArray,
+        author: req.user.id,
+        image: imageUrl,
+      })
+      await newPost.save()
+      res.status(201).json(newPost)
+    } catch (error) {
+      console.error(error)
+      res.status(500).json({ error: error.message })
+    }
+  }
+)
 
 /**
- * 2) Posts por tag
+ * 2) Posts by tag
  */
 router.get('/by-tag/:tag', async (req, res) => {
   try {
     const { tag } = req.params
     if (!tag) return res.status(400).json({ error: 'Falta el tag' })
-    const posts = await Post.find({ tags: tag }).populate('author','username')
+    const posts = await Post.find({ tags: tag }).populate('author', 'username')
     res.json(posts)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -43,7 +72,7 @@ router.get('/by-tag/:tag', async (req, res) => {
 })
 
 /**
- * 3) Todos los tags
+ * 3) All distinct tags
  */
 router.get('/tags', async (req, res) => {
   try {
@@ -55,13 +84,13 @@ router.get('/tags', async (req, res) => {
 })
 
 /**
- * 4) Últimos posts
+ * 4) Latest posts
  */
 router.get('/latest', async (req, res) => {
   try {
     const posts = await Post.find()
       .sort({ createdAt: -1 })
-      .populate('author','username')
+      .populate('author', 'username')
     res.json(posts)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -69,25 +98,22 @@ router.get('/latest', async (req, res) => {
 })
 
 /**
- * 5) Posts relevantes
+ * 5) Relevant posts (por comentarios y reacciones)
  */
 router.get('/relevant', async (req, res) => {
   try {
     const posts = await Post.aggregate([
-      { $lookup: { from:'comments', localField:'_id', foreignField:'post', as:'comments' } },
-      { $lookup: { from:'reactions', localField:'_id', foreignField:'post', as:'reactions' } },
+      { $lookup: { from: 'comments', localField: '_id', foreignField: 'post', as: 'comments' } },
+      { $lookup: { from: 'reactions', localField: '_id', foreignField: 'post', as: 'reactions' } },
       { $addFields: {
-          commentCount:  { $size:'$comments' },
-          reactionCount: { $size:'$reactions' },
-          relevance:     { $add: [
-            { $multiply:['$commentCount',2] },
-            '$reactionCount'
-          ]}
+          commentCount:  { $size: '$comments' },
+          reactionCount: { $size: '$reactions' },
+          relevance:     { $add: [ { $multiply: ['$commentCount', 2] }, '$reactionCount' ] }
         }
       },
-      { $sort:{ relevance:-1 } }
+      { $sort: { relevance: -1 } }
     ])
-    const populated = await Post.populate(posts, { path:'author', select:'username' })
+    const populated = await Post.populate(posts, { path: 'author', select: 'username' })
     res.json(populated)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -95,26 +121,25 @@ router.get('/relevant', async (req, res) => {
 })
 
 /**
- * 6) Buscar posts
+ * 6) buscar posts por query (title, content, tags, author.username)
  */
 router.get('/search', async (req, res) => {
   try {
     const q = req.query.q || ''
-    if (!q) return res.status(400).json({ error:'Falta el parámetro de búsqueda' })
-
+    if (!q) return res.status(400).json({ error: 'Falta el parámetro de búsqueda' })
     const posts = await Post.aggregate([
-      { $lookup:{ from:'users', localField:'author', foreignField:'_id', as:'author' }},
-      { $unwind:'$author' },
-      { $match:{
-          $or:[
-            { title:          { $regex:q, $options:'i' } },
-            { content:        { $regex:q, $options:'i' } },
-            { tags:           { $regex:q, $options:'i' } },
-            { 'author.username': { $regex:q, $options:'i' }}
+      { $lookup: { from: 'users', localField: 'author', foreignField: '_id', as: 'author' } },
+      { $unwind: '$author' },
+      { $match: {
+          $or: [
+            { title:           { $regex: q, $options: 'i' } },
+            { content:         { $regex: q, $options: 'i' } },
+            { tags:            { $regex: q, $options: 'i' } },
+            { 'author.username': { $regex: q, $options: 'i' } },
           ]
         }
       },
-      { $project:{ title:1,content:1,tags:1,createdAt:1,'author.username':1 }}
+      { $project: { title:1, content:1, tags:1, createdAt:1, 'author.username':1 } }
     ])
     res.json(posts)
   } catch (error) {
@@ -123,11 +148,11 @@ router.get('/search', async (req, res) => {
 })
 
 /**
- * 7) Todos los posts
+ * 7) All posts
  */
 router.get('/', async (req, res) => {
   try {
-    const posts = await Post.find().populate('author','username')
+    const posts = await Post.find().populate('author', 'username')
     res.json(posts)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -135,13 +160,13 @@ router.get('/', async (req, res) => {
 })
 
 /**
- * 8) Reacciones de un post
+ * 8) Resumen de reacciones para un post
  */
 router.get('/:id/reactions', async (req, res) => {
   try {
     const { id } = req.params
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error:'ID de post inválido' })
+      return res.status(400).json({ error: 'ID de post inválido' })
     }
     const reactions = await Post.getReactionsSummary(id)
     res.json(reactions)
@@ -151,14 +176,14 @@ router.get('/:id/reactions', async (req, res) => {
 })
 
 /**
- * 9) UN SOLO POST POR ID
+ * 9) Obtener un post por ID
  */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const post = await Post.findById(id).populate('author','username')
+    const post = await Post.findById(id).populate('author', 'username')
     if (!post) {
-      return res.status(404).json({ error:'Post no encontrado' })
+      return res.status(404).json({ error: 'Post no encontrado' })
     }
     res.json(post)
   } catch (error) {
