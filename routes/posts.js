@@ -176,6 +176,40 @@ router.get('/:id/reactions', async (req, res) => {
 })
 
 /**
+ * 10) Trending posts
+ */
+router.get('/trending', async (req, res) => {
+  try {
+   
+    const posts = await Post.aggregate([
+      { 
+        $lookup: {
+          from: 'comments',
+          localField: '_id',
+          foreignField: 'post',
+          as: 'comments'
+        }
+      },
+      {
+        $addFields: {
+          commentCount: { $size: '$comments' }
+        }
+      },
+      { $sort: { commentCount: -1, createdAt: -1 } },
+      { $limit: 10 }              
+    ])
+    // Poblamos el autor
+    const populated = await Post.populate(posts, {
+      path: 'author',
+      select: 'username'
+    })
+    res.json(populated)
+  } catch (error) {
+    console.error('Error en /posts/trending:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+/**
  * 9) Obtener un post por ID
  */
 router.get('/:id', async (req, res) => {

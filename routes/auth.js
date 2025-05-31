@@ -1,3 +1,4 @@
+// routes/auth.js
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -17,12 +18,15 @@ router.post('/register', async (req, res) => {
     user = new User({ username, email, password });
     await user.save();
 
-    // Generar JWT
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1h'
-    });
+    // Generar JWT con id y username
+    const token = jwt.sign(
+      { id: user._id, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
-    res.status(201).json({ token });
+    // Devolver token y username
+    res.status(201).json({ token, username: user.username });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -41,12 +45,15 @@ router.post('/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
 
-    // Generar JWT
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1h'
-    });
+    // Generar JWT con id y username
+    const token = jwt.sign(
+      { id: user._id, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
-    res.json({ token });
+    // Devolver token y username
+    res.json({ token, username: user.username });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

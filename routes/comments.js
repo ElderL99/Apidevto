@@ -49,12 +49,17 @@ router.post('/', async (req, res) => {
 // Obtiene comentarios de un post (sin cambios)
 router.get('/', async (req, res) => {
   try {
-    const { post } = req.query;
-    const comments = await Comment.find({ post }).populate('author', 'username');
-    res.json(comments);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const { post, limit } = req.query
+    let query = Comment.find({ post })
+      .populate('author', 'username')
+      .sort({ createdAt: -1 })       // los más nuevos primero
 
+    if (limit) query = query.limit(Number(limit))
+
+    const comments = await query.exec()
+    res.json(comments)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})  
 module.exports = router;
