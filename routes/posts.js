@@ -7,7 +7,7 @@ const mongoose = require('mongoose')
 const Post     = require('../models/Post')
 const auth     = require('../middleware/auth') // JWT auth middleware
 
-// --- Multer setup for image uploads ---
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, '..', 'public', 'uploads'))
@@ -57,9 +57,7 @@ router.post(
   }
 )
 
-/**
- * 2) Posts by tag
- */
+
 router.get('/by-tag/:tag', async (req, res) => {
   try {
     const { tag } = req.params
@@ -71,9 +69,6 @@ router.get('/by-tag/:tag', async (req, res) => {
   }
 })
 
-/**
- * 3) All distinct tags
- */
 router.get('/tags', async (req, res) => {
   try {
     const tags = await Post.distinct('tags')
@@ -83,9 +78,7 @@ router.get('/tags', async (req, res) => {
   }
 })
 
-/**
- * 4) Latest posts
- */
+
 router.get('/latest', async (req, res) => {
   try {
     const posts = await Post.find()
@@ -97,9 +90,7 @@ router.get('/latest', async (req, res) => {
   }
 })
 
-/**
- * 5) Relevant posts (por comentarios y reacciones)
- */
+
 router.get('/relevant', async (req, res) => {
   try {
     const posts = await Post.aggregate([
@@ -120,9 +111,7 @@ router.get('/relevant', async (req, res) => {
   }
 })
 
-/**
- * 6) buscar posts por query (title, content, tags, author.username)
- */
+
 router.get('/search', async (req, res) => {
   try {
     const q = req.query.q || ''
@@ -147,9 +136,7 @@ router.get('/search', async (req, res) => {
   }
 })
 
-/**
- * 7) All posts
- */
+
 router.get('/', async (req, res) => {
   try {
     const posts = await Post.find().populate('author', 'username')
@@ -159,9 +146,7 @@ router.get('/', async (req, res) => {
   }
 })
 
-/**
- * 8) Resumen de reacciones para un post
- */
+
 router.get('/:id/reactions', async (req, res) => {
   try {
     const { id } = req.params
@@ -175,9 +160,7 @@ router.get('/:id/reactions', async (req, res) => {
   }
 })
 
-/**
- * 10) Trending posts
- */
+
 router.get('/trending', async (req, res) => {
   try {
    
@@ -209,9 +192,7 @@ router.get('/trending', async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
-/**
- * 9) Obtener un post por ID
- */
+
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params
